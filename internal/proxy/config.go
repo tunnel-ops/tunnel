@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bellamy/requests/internal/appconfig"
 	"github.com/bellamy/requests/internal/names"
 )
 
@@ -33,15 +34,31 @@ func DefaultBlockedPorts() map[int]struct{} {
 	return m
 }
 
-// LoadConfig builds a Config from environment variables.
-// DOMAIN is required; all other vars fall back to safe defaults.
+// LoadConfig builds a Config from environment variables, falling back to
+// appconfig for DOMAIN and PROXY_PORT when env vars are not set.
 func LoadConfig(store *names.Store) (Config, error) {
 	domain := os.Getenv("DOMAIN")
+	proxyPortStr := os.Getenv("PROXY_PORT")
+
+	if domain == "" || proxyPortStr == "" {
+		if cfg, err := appconfig.Load(); err == nil {
+			if domain == "" && cfg.Domain != "" {
+				domain = cfg.Domain
+			}
+			if proxyPortStr == "" && cfg.ProxyPort != 0 {
+				proxyPortStr = strconv.Itoa(cfg.ProxyPort)
+			}
+		}
+	}
+
 	if domain == "" {
 		return Config{}, &MissingEnvError{"DOMAIN"}
 	}
 
-	proxyPort := envOr("PROXY_PORT", "7999")
+	if proxyPortStr == "" {
+		proxyPortStr = "7999"
+	}
+	proxyPort := proxyPortStr
 
 	blocked := DefaultBlockedPorts()
 	if raw := os.Getenv("BLOCKED_PORTS"); raw != "" {
