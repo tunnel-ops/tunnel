@@ -1,0 +1,30 @@
+# Build artifacts
+bin/
+dist/
+
+# Environment / secrets — use .env.example as a template
+.env
+.env.local
+*.pem
+*.key
+*.cert
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
+*.swp
+*.swo
+
+# Go test / coverage
+*.test
+*.out
+coverage.txt
+coverage.html
