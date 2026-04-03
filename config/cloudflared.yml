@@ -1,0 +1,41 @@
+# One-time setup (run these once, in order):
+#
+#   1. Install cloudflared:
+#        brew install cloudflare/cloudflare/cloudflared
+#
+#   2. Authenticate with your Cloudflare account (opens browser):
+#        cloudflared tunnel login
+#
+#   3. Create a named tunnel:
+#        cloudflared tunnel create dev
+#      This prints a Tunnel ID — replace <TUNNEL_ID> below.
+#
+#   4. Add a wildcard DNS record pointing to the tunnel:
+#        cloudflared tunnel route dns dev "*.your-domain.com"
+#
+#   5. Copy this file to ~/.cloudflared/config.yml and fill in your values:
+#        cp config/cloudflared.yml ~/.cloudflared/config.yml
+#
+#   6. Install as a system service (auto-starts on login):
+#        make tunnel-install
+#      Or run manually:
+#        cloudflared tunnel run
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+tunnel: <TUNNEL_ID>
+credentials-file: ~/.cloudflared/<TUNNEL_ID>.json
+
+# QUIC is lower-latency than the default HTTP/2 transport.
+protocol: quic
+
+ingress:
+  - hostname: "*.your-domain.com"
+    service: http://localhost:7999
+    originRequest:
+      # Time to wait for the local proxy to accept a connection.
+      connectTimeout: 10s
+      # The local proxy does not use TLS, so this must stay false.
+      noTLSVerify: false
+  # Catch-all: return 404 for any unmatched hostnames.
+  - service: http_status:404
