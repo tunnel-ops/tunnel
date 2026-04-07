@@ -23,6 +23,22 @@ import (
 const defaultProxyPort = 7999
 const defaultTunnelName = "dev"
 
+// providerHelp shows contextual notes when a provider is highlighted in the picker.
+var providerHelp = map[string]string{
+	"cloudflare": "Uses cloudflared CLI auth — no API key needed.",
+	"godaddy":    "Requires a GoDaddy developer API key.\n  → https://developer.godaddy.com/keys",
+	"namecheap":  "Requires API access enabled on your account ($50+ balance or 20+ domains).\n  → https://ap.www.namecheap.com/settings/tools/apiaccess/",
+	"manual":     "You will add the DNS record yourself — no API needed.",
+}
+
+// prevState maps each wizard state to the one before it for esc/back navigation.
+var prevState = map[wizardState]wizardState{
+	stateInputDomain: statePickProvider,
+	stateInputTunnel: stateInputDomain,
+	stateInputCreds:  stateInputTunnel,
+	stateConfirm:     stateInputCreds,
+}
+
 // Step indices for stateRunning.
 const (
 	stepCloudflaredCheck = iota
@@ -268,6 +284,19 @@ func isQuit(key string) bool {
 	return key == "q" || key == "enter" || key == "ctrl+c"
 }
 
+// goBack transitions to the previous wizard state. No-op when already at the first screen.
+func (m model) goBack() (tea.Model, tea.Cmd) {
+	prev, ok := prevState[m.state]
+	if !ok {
+		return m, nil
+	}
+	// Cloudflare and Manual have no creds screen, so skip it when going back from confirm.
+	if m.state == stateConfirm && (m.cfg.Provider == "cloudflare" || m.cfg.Provider == "manual") {
+		prev = stateInputTunnel
+	}
+	return m.transitionTo(prev)
+}
+
 // updatePickProvider handles key events on the provider selection screen.
 func (m model) updatePickProvider(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -284,6 +313,8 @@ func (m model) updatePickProvider(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		m.cfg.Provider = m.providerKeys[m.cursor]
 		return m.transitionTo(stateInputDomain)
+	case "esc":
+		// already at first screen — no-op
 	}
 	return m, nil
 }
@@ -294,6 +325,8 @@ func (m model) updateInputText(msg tea.KeyMsg, onConfirm func(string) (model, te
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
+	case "esc":
+		return m.goBack()
 	case "enter":
 		v := strings.TrimSpace(m.textInput.Value())
 		return onConfirm(v)
@@ -308,6 +341,8 @@ func (m model) updateInputCreds(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
+	case "esc":
+		return m.goBack()
 
 	case "tab", "down":
 		m.credFields[m.credFocus].Blur()
@@ -357,6 +392,8 @@ func (m model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
+	case "esc":
+		return m.goBack()
 	case "up", "k":
 		if m.confirmCursor > 0 {
 			m.confirmCursor--
@@ -683,6 +720,12 @@ func (m model) viewPickProvider() string {
 			b.WriteString("    " + c + "\n")
 		}
 	}
+	if help, ok := providerHelp[m.providerKeys[m.cursor]]; ok {
+		b.WriteString("\n")
+		for _, line := range strings.Split(help, "\n") {
+			b.WriteString("  " + subtleStyle.Render(line) + "\n")
+		}
+	}
 	b.WriteString("\n  " + subtleStyle.Render("↑↓ move  enter select  ctrl+c quit") + "\n")
 	return b.String()
 }
@@ -694,7 +737,7 @@ func (m model) viewTextInput(label string) string {
 	if m.inputError != "" {
 		b.WriteString("  " + errorStyle.Render(m.inputError) + "\n")
 	}
-	b.WriteString("\n  " + subtleStyle.Render("enter confirm  ctrl+c quit") + "\n")
+	b.WriteString("\n  " + subtleStyle.Render("enter confirm  esc back  ctrl+c quit") + "\n")
 	return b.String()
 }
 
@@ -704,7 +747,7 @@ func (m model) viewCreds() string {
 	for i, f := range m.credFields {
 		b.WriteString("  " + labelStyle.Render(m.credLabels[i]) + "  " + f.View() + "\n")
 	}
-	b.WriteString("\n  " + subtleStyle.Render("tab next field  enter confirm  ctrl+c quit") + "\n")
+	b.WriteString("\n  " + subtleStyle.Render("tab next field  enter confirm  esc back  ctrl+c quit") + "\n")
 	return b.String()
 }
 
@@ -717,7 +760,7 @@ func (m model) viewConfirm() string {
 
 	b.WriteString("  " + checkBox(m.installProxy, m.confirmCursor == 0) + "  Install proxy as background service\n")
 	b.WriteString("  " + checkBox(m.installCloudflared, m.confirmCursor == 1) + "  Install cloudflared as background service\n")
-	b.WriteString("\n  " + subtleStyle.Render("↑↓ move  space toggle  enter begin  ctrl+c quit") + "\n")
+	b.WriteString("\n  " + subtleStyle.Render("↑↓ move  space toggle  enter begin  esc back  ctrl+c quit") + "\n")
 	return b.String()
 }
 
