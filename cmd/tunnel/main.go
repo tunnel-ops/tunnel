@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bellamy/requests/internal/appconfig"
-	"github.com/bellamy/requests/internal/names"
-	"github.com/bellamy/requests/internal/setup"
+	"github.com/tunnel-ops/tunnel/internal/appconfig"
+	"github.com/tunnel-ops/tunnel/internal/names"
+	"github.com/tunnel-ops/tunnel/internal/setup"
 )
 
 const usageText = `tunnel — expose local dev servers via <port>.your-domain.com

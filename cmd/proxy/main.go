@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bellamy/requests/internal/names"
-	"github.com/bellamy/requests/internal/proxy"
+	"github.com/tunnel-ops/tunnel/internal/names"
+	"github.com/tunnel-ops/tunnel/internal/proxy"
 )
 
 // Version and BuildTime are injected at build time via -ldflags.

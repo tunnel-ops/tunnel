@@ -14,7 +14,7 @@ tunnel 8080
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bellamy/requests/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/tunnel-ops/tunnel/main/install.sh | bash
 ```
 
 Installs `tunnel` and `requests-proxy` to `/usr/local/bin`. macOS and Linux (amd64/arm64) are supported.
@@ -22,7 +22,7 @@ Installs `tunnel` and `requests-proxy` to `/usr/local/bin`. macOS and Linux (amd
 To install a specific version:
 
 ```bash
-VERSION=v1.0.0 bash <(curl -fsSL https://raw.githubusercontent.com/bellamy/requests/main/install.sh)
+VERSION=v1.0.0 bash <(curl -fsSL https://raw.githubusercontent.com/tunnel-ops/tunnel/main/install.sh)
 ```
 
 ---
@@ -150,8 +150,8 @@ You can override any setting with environment variables:
 ## Build from source
 
 ```bash
-git clone https://github.com/bellamy/requests
-cd requests
+git clone https://github.com/tunnel-ops/tunnel
+cd tunnel
 make build
 # → bin/tunnel
 # → bin/requests-proxy

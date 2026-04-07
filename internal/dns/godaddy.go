@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/bellamy/requests/internal/keychain"
+	"github.com/tunnel-ops/tunnel/internal/keychain"
 )
 
 const (

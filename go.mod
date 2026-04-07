@@ -1,4 +1,4 @@
-module github.com/bellamy/requests
+module github.com/tunnel-ops/tunnel
 
 go 1.25.2
 

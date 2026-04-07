@@ -38,9 +38,9 @@ go test -v ./internal/names/...
 
 **Expected output:**
 ```
-ok  github.com/bellamy/requests/internal/dns
-ok  github.com/bellamy/requests/internal/proxy
-ok  github.com/bellamy/requests/internal/names
+ok  github.com/tunnel-ops/tunnel/internal/dns
+ok  github.com/tunnel-ops/tunnel/internal/proxy
+ok  github.com/tunnel-ops/tunnel/internal/names
 ```
 
 ---

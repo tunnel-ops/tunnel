@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bellamy/requests/internal/appconfig"
-	"github.com/bellamy/requests/internal/names"
+	"github.com/tunnel-ops/tunnel/internal/appconfig"
+	"github.com/tunnel-ops/tunnel/internal/names"
 )
 
 // DefaultBlockedPorts returns the default set of ports that the proxy refuses

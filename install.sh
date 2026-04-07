@@ -2,7 +2,7 @@
 # Install requests (tunnel + proxy) from GitHub Releases.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/bellamy/requests/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/tunnel-ops/tunnel/main/install.sh | bash
 #
 # Options (env vars):
 #   INSTALL_DIR   Installation directory (default: /usr/local/bin)
@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-REPO="bellamy/requests"
+REPO="tunnel-ops/tunnel"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 VERSION="${VERSION:-}"
 

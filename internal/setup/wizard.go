@@ -14,8 +14,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/bellamy/requests/internal/appconfig"
-	"github.com/bellamy/requests/internal/dns"
+	"github.com/tunnel-ops/tunnel/internal/appconfig"
+	"github.com/tunnel-ops/tunnel/internal/dns"
 )
 
 // ── Constants ─────────────────────────────────────────────────────────────────

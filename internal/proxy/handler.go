@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bellamy/requests/internal/names"
+	"github.com/tunnel-ops/tunnel/internal/names"
 )
 
 // Config holds all runtime configuration for the proxy.

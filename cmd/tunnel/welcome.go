@@ -46,7 +46,7 @@ func cmdWelcome() {
 	// ── Links ─────────────────────────────────────────────────────────────────
 	fmt.Printf("  %s  %s\n",
 		labelSt.Render("GitHub"),
-		dimSt.Render("https://github.com/bellamy/requests  (please leave a star ⭐)"),
+		dimSt.Render("https://github.com/tunnel-ops/tunnel  (please leave a star ⭐)"),
 	)
 	fmt.Println()
 
