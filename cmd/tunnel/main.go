@@ -31,6 +31,8 @@ Usage:
   tunnel close <port|name>            Remove a registered tunnel
   tunnel rm <name>                    Alias for close
   tunnel list                         List registered tunnels and listening ports
+  tunnel watch                        Live request monitor for all ports
+  tunnel watch <port>                 Live request monitor for one port
   tunnel block <port>                 Block a port from being exposed
   tunnel unblock <port>               Remove a port block
   tunnel help                         Show this help
@@ -67,6 +69,17 @@ func main() {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
+		return
+	}
+
+	if args[0] == "watch" {
+		portFilter := 0
+		if len(args) >= 2 {
+			if p, err := parsePort(args[1]); err == nil {
+				portFilter = p
+			}
+		}
+		cmdWatch(portFilter)
 		return
 	}
 
