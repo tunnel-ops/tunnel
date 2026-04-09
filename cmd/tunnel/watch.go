@@ -44,6 +44,7 @@ type sseConnectedMsg struct{ resp *http.Response }
 type requestEventMsg struct{ event proxy.RequestEvent }
 type sseErrMsg struct{ err error }
 type retrySSEMsg struct{}
+type retryStatusMsg struct{}
 
 // watchModel is the Bubble Tea model for tunnel watch.
 type watchModel struct {
@@ -175,8 +176,12 @@ func (m watchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case statusErrMsg:
-		m.err = msg.err
-		return m, tea.Quit
+		m.err = fmt.Errorf("proxy offline — is requests-proxy running? (%w)", msg.err)
+		return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return retryStatusMsg{} })
+
+	case retryStatusMsg:
+		m.err = nil
+		return m, tea.Batch(fetchStatus(m.adminURL), startSSEConnect(m.adminURL))
 
 	case sseConnectedMsg:
 		r := &sseReader{
@@ -208,7 +213,10 @@ func (m watchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m watchModel) View() string {
 	if m.err != nil {
-		return fmt.Sprintf("proxy offline — is requests-proxy running?\nerror: %v\n\nPress q to exit.\n", m.err)
+		return fmt.Sprintf("\n  %s\n\n  %s\n",
+			boldStyle.Render("tunnel watch"),
+			dimStyle.Render(m.err.Error()+" — retrying in 3s  (q to quit)"),
+		)
 	}
 
 	var b strings.Builder
