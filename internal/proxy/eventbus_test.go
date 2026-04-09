@@ -3,8 +3,12 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -127,5 +131,52 @@ func TestEventBus_ServeHTTP_StreamsEvent(t *testing.T) {
 	}
 	if !foundEvent {
 		t.Errorf("expected GET /health event in SSE body, got: %q", body)
+	}
+}
+
+func TestHandler_PublishesEventAfterRequest(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+	_, portStr, _ := net.SplitHostPort(u.Host)
+	backendPort, _ := strconv.Atoi(portStr)
+
+	bus := NewEventBus()
+	ch, unsub := bus.Subscribe()
+	defer unsub()
+
+	cfg := Config{
+		Domain:       "example.com",
+		ProxyPort:    "7999",
+		Bus:          bus,
+		BlockedPorts: map[int]struct{}{},
+		MaxBodyBytes: 10 * 1024 * 1024,
+	}
+	h := New(cfg)
+
+	req := httptest.NewRequest("GET", "/ping", nil)
+	req.Host = fmt.Sprintf("%d.example.com", backendPort)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	select {
+	case e := <-ch:
+		if e.Method != "GET" {
+			t.Errorf("want method GET, got %s", e.Method)
+		}
+		if e.Path != "/ping" {
+			t.Errorf("want path /ping, got %s", e.Path)
+		}
+		if e.Port != backendPort {
+			t.Errorf("want port %d, got %d", backendPort, e.Port)
+		}
+		if e.StatusCode != 200 {
+			t.Errorf("want status 200, got %d", e.StatusCode)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timeout: RequestEvent not published")
 	}
 }

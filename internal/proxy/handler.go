@@ -29,6 +29,7 @@ type Config struct {
 	IdleTimeout  time.Duration
 	Names        *names.Store
 	Blocked      *names.Blocked
+	Bus          *EventBus
 }
 
 // Handler is the reverse proxy HTTP handler.
@@ -177,6 +178,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"status", rw.status,
 		"latency_ms", time.Since(start).Milliseconds(),
 	)
+
+	if h.cfg.Bus != nil {
+		h.cfg.Bus.Publish(RequestEvent{
+			Timestamp:  start,
+			Method:     r.Method,
+			Path:       r.URL.Path,
+			Port:       port,
+			StatusCode: rw.status,
+			DurationMs: time.Since(start).Milliseconds(),
+		})
+	}
 }
 
 // resolvePort resolves the target port from the Host header.
