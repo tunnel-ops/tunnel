@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -22,6 +23,35 @@ var (
 
 var startTime = time.Now()
 
+func makeStatusHandler(cfg proxy.Config, store *names.Store, version string, start time.Time) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+
+		type response struct {
+			Status    string         `json:"status"`
+			Version   string         `json:"version"`
+			Domain    string         `json:"domain"`
+			ProxyPort string         `json:"proxy_port"`
+			Uptime    string         `json:"uptime"`
+			Ports     map[string]int `json:"ports"`
+		}
+
+		resp := response{
+			Status:    "online",
+			Version:   version,
+			Domain:    "*." + cfg.Domain,
+			ProxyPort: cfg.ProxyPort,
+			Uptime:    time.Since(start).Round(time.Second).String(),
+			Ports:     store.List(),
+		}
+
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+		}
+	}
+}
+
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
@@ -41,6 +71,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	bus := proxy.NewEventBus()
+	cfg.Bus = bus
+
 	// Health server on a separate port so it is never routed through the
 	// proxy's Host-based dispatch (a request to localhost:HEALTH_PORT would
 	// fail domain validation otherwise).
@@ -50,6 +83,8 @@ func main() {
 		fmt.Fprintf(w, `{"status":"ok","version":%q,"uptime":%q}`,
 			Version, time.Since(startTime).Round(time.Second).String())
 	})
+	healthMux.Handle("/api/events", bus)
+	healthMux.HandleFunc("/api/status", makeStatusHandler(cfg, store, Version, startTime))
 	healthSrv := &http.Server{
 		Addr:         ":" + cfg.HealthPort,
 		Handler:      healthMux,
