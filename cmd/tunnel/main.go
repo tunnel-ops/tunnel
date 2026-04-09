@@ -19,42 +19,12 @@ import (
 	"github.com/tunnel-ops/tunnel/internal/setup"
 )
 
-const usageText = `tunnel — expose local dev servers via <port>.your-domain.com
-
-Usage:
-  tunnel welcome                      Show welcome screen and quick-start info
-  tunnel setup                        First-time configuration wizard
-  tunnel <port>                       Print the public URL for a numeric port
-  tunnel <port> --open                Print and open in browser
-  tunnel --name <name> <port>         Register a named subdomain and print URL
-  tunnel --name <name> <port> --open  Register, print, and open in browser
-  tunnel close <port|name>            Remove a registered tunnel
-  tunnel rm <name>                    Alias for close
-  tunnel list                         List registered tunnels and listening ports
-  tunnel watch                        Live request monitor for all ports
-  tunnel watch <port>                 Live request monitor for one port
-  tunnel block <port>                 Block a port from being exposed
-  tunnel unblock <port>               Remove a port block
-  tunnel help                         Show this help
-
-Environment (optional after running setup):
-  DOMAIN    Override the configured domain
-
-Examples:
-  tunnel setup
-  tunnel 5173
-  tunnel --name api 8080
-  tunnel --name api 8080 --open
-  tunnel close 5173
-  tunnel close api
-  tunnel list
-`
 
 func main() {
 	args := os.Args[1:]
 
 	if len(args) == 0 || isHelp(args[0]) {
-		fmt.Print(usageText)
+		cmdHelp()
 		return
 	}
 
@@ -93,7 +63,8 @@ func main() {
 
 	switch args[0] {
 	case "list":
-		cmdList(domain, store)
+		showAll := len(args) >= 2 && args[1] == "-a"
+		cmdList(domain, store, showAll)
 
 	case "block":
 		if len(args) < 2 {
@@ -292,7 +263,7 @@ func cmdClose(key string, domain string, store *names.Store) {
 	}
 }
 
-func cmdList(domain string, store *names.Store) {
+func cmdList(domain string, store *names.Store, showAll bool) {
 	all := store.List()
 
 	var portKeys, nameKeys []string
@@ -317,7 +288,7 @@ func cmdList(domain string, store *names.Store) {
 		unregistered = append(unregistered, p)
 	}
 
-	showList(domain, nameKeys, portKeys, all, unregistered)
+	showList(domain, nameKeys, portKeys, all, unregistered, showAll)
 }
 
 func parsePort(s string) (int, error) {

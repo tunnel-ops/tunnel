@@ -66,8 +66,8 @@ type watchModel struct {
 
 var (
 	boldStyle = lipgloss.NewStyle().Bold(true)
-	okStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
-	errStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	okStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#3DD68C"))
+	errStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5C5C"))
 )
 
 func statusCodeStyle(code int) lipgloss.Style {
@@ -76,6 +76,19 @@ func statusCodeStyle(code int) lipgloss.Style {
 		return okStyle
 	case code >= 400:
 		return errStyle
+	default:
+		return dimStyle
+	}
+}
+
+func methodStyle(method string) lipgloss.Style {
+	switch method {
+	case "POST":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("#3DD68C"))
+	case "PUT", "PATCH":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("#F4A261"))
+	case "DELETE":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5C5C"))
 	default:
 		return dimStyle
 	}
@@ -212,32 +225,38 @@ func (m watchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m watchModel) View() string {
+	tunnelWord := gradientTunnel()
+
 	if m.err != nil {
 		return fmt.Sprintf("\n  %s\n\n  %s\n",
-			boldStyle.Render("tunnel watch"),
+			tunnelWord+boldStyle.Render(" watch"),
 			dimStyle.Render(m.err.Error()+" — retrying in 3s  (q to quit)"),
 		)
 	}
 
 	var b strings.Builder
-	hr := strings.Repeat("─", 72)
+	hr := dimStyle.Render(strings.Repeat("─", 72))
 
-	b.WriteString(boldStyle.Render("tunnel watch"))
+	b.WriteString(tunnelWord + boldStyle.Render(" watch"))
 	if m.portFilter != 0 {
 		b.WriteString(boldStyle.Render(fmt.Sprintf(" %d", m.portFilter)))
 	}
-	b.WriteString(dimStyle.Render("                                    (Ctrl+C to quit)") + "\n\n")
+	b.WriteString(hintStyle.Render("                                    (Ctrl+C to quit)") + "\n\n")
 
 	if m.status != nil {
-		b.WriteString(fmt.Sprintf("Session Status    %s\n", m.status.Status))
+		statusVal := liveStyle.Render(m.status.Status)
+		if m.status.Status != "online" {
+			statusVal = errStyle.Render(m.status.Status)
+		}
+		b.WriteString(fmt.Sprintf("Session Status    %s\n", statusVal))
 		b.WriteString(fmt.Sprintf("Domain            %s\n", m.status.Domain))
-		b.WriteString(fmt.Sprintf("Proxy             http://localhost:%s\n", m.status.ProxyPort))
+		b.WriteString(fmt.Sprintf("Proxy             %s\n", dimStyle.Render("http://localhost:"+m.status.ProxyPort)))
 		b.WriteString(fmt.Sprintf("Uptime            %s\n", m.status.Uptime))
 	} else {
 		b.WriteString("Loading...\n")
 	}
 
-	b.WriteString("\nPorts\n" + hr + "\n")
+	b.WriteString("\n" + sectionStyle.Render("Ports") + "\n" + hr + "\n")
 	if m.status != nil {
 		keys := m.closePorts
 		if m.portFilter != 0 {
@@ -248,10 +267,11 @@ func (m watchModel) View() string {
 			port := m.status.Ports[k]
 			prefix := "  "
 			if m.closeMode && i == m.closeCursor {
-				prefix = boldStyle.Render("> ")
+				prefix = choiceActiveStyle.Render("> ")
 			}
-			b.WriteString(fmt.Sprintf("%s%-8s https://%s.%s → http://localhost:%d\n",
-				prefix, k, k, domain, port))
+			publicURL := fmt.Sprintf("https://%s.%s", k, domain)
+			localURL := dimStyle.Render(fmt.Sprintf("→ http://localhost:%d", port))
+			b.WriteString(fmt.Sprintf("%s%-8s %s %s\n", prefix, k, urlStyle.Render(publicURL), localURL))
 		}
 	}
 
@@ -260,33 +280,30 @@ func (m watchModel) View() string {
 		case m.openPrompt:
 			b.WriteString(fmt.Sprintf("\nOpen port: %s\n", m.openInput.View()))
 		case m.closeMode:
-			b.WriteString("\n[↑↓] Select   [Enter] Confirm   [Esc] Cancel\n")
+			b.WriteString("\n" + hintStyle.Render("[↑↓] Select   [Enter] Confirm   [Esc] Cancel") + "\n")
 		default:
-			b.WriteString("\n[o] Open port   [c] Close port\n")
+			b.WriteString("\n" + hintStyle.Render("[o] Open port   [c] Close port") + "\n")
 		}
 	}
 
-	b.WriteString("\nHTTP Requests\n" + hr + "\n")
+	b.WriteString("\n" + sectionStyle.Render("HTTP Requests") + "\n" + hr + "\n")
 
 	switch {
 	case m.sseReader == nil && len(m.requests) == 0:
-		b.WriteString(dimStyle.Render("reconnecting...") + "\n")
+		b.WriteString(warnStyle.Render("reconnecting...") + "\n")
 	case len(m.requests) == 0:
 		b.WriteString(dimStyle.Render("Waiting for requests...") + "\n")
 	default:
 		for _, r := range m.requests {
+			ts := dimStyle.Render(r.Timestamp.Format("15:04:05"))
+			method := methodStyle(r.Method).Render(fmt.Sprintf("%-5s", r.Method))
+			port := dimStyle.Render(fmt.Sprintf("%-6d", r.Port))
 			code := statusCodeStyle(r.StatusCode).Render(strconv.Itoa(r.StatusCode))
 			path := r.Path
 			if len(path) > 40 {
 				path = path[:37] + "..."
 			}
-			b.WriteString(fmt.Sprintf("%s  %-5s %-6d %-40s %s\n",
-				r.Timestamp.Format("15:04:05"),
-				r.Method,
-				r.Port,
-				path,
-				code,
-			))
+			b.WriteString(fmt.Sprintf("%s  %s %s %-40s %s\n", ts, method, port, path, code))
 		}
 	}
 
@@ -297,12 +314,27 @@ func fetchStatus(adminURL string) tea.Cmd {
 	return func() tea.Msg {
 		resp, err := http.Get(adminURL + "/api/status")
 		if err != nil {
-			return statusErrMsg{err}
+			return statusErrMsg{fmt.Errorf("cannot reach %s: %w", adminURL, err)}
 		}
 		defer resp.Body.Close()
+
+		body, _ := io.ReadAll(resp.Body)
+
+		if resp.StatusCode != http.StatusOK {
+			snippet := strings.TrimSpace(string(body))
+			if len(snippet) > 100 {
+				snippet = snippet[:100] + "..."
+			}
+			return statusErrMsg{fmt.Errorf("proxy returned HTTP %d — try restarting it (launchctl kickstart -k gui/$UID/com.bellamy.requests-proxy): %s", resp.StatusCode, snippet)}
+		}
+
 		var s statusResponse
-		if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
-			return statusErrMsg{err}
+		if err := json.Unmarshal(body, &s); err != nil {
+			snippet := strings.TrimSpace(string(body))
+			if len(snippet) > 100 {
+				snippet = snippet[:100] + "..."
+			}
+			return statusErrMsg{fmt.Errorf("unexpected response (proxy may need restart): got %q", snippet)}
 		}
 		return statusMsg{resp: s}
 	}

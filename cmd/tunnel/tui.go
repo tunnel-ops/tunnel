@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
 var (
-	urlStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#4C8FFF"))
+	urlStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#4C618F"))
 	liveStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#3DD68C"))
 	deadStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#666677"))
 	doneStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#3DD68C")).Bold(true)
@@ -20,6 +21,15 @@ var (
 	hintStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#555566"))
 )
 
+func gradientTunnel() string {
+	return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#4C618F")).Render("t") +
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#5B5F9E")).Render("u") +
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#6A5CAC")).Render("n") +
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7958B8")).Render("n") +
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#8855C3")).Render("e") +
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#9751CC")).Render("l")
+}
+
 func statusDot(listening bool) string {
 	if listening {
 		return liveStyle.Render("●")
@@ -28,29 +38,45 @@ func statusDot(listening bool) string {
 }
 
 func showTunnelURL(url, closeKey string, port int, listening bool, serviceIssue string) {
-	fmt.Println()
-	fmt.Printf("  %s\n", urlStyle.Render(url))
-	fmt.Println()
+	hr := dimStyle.Render(strings.Repeat("─", 55))
 
-	if serviceIssue != "" {
-		fmt.Printf("  %s  %s\n",
-			warnStyle.Render("⚠"),
-			warnStyle.Render(serviceIssue+" — run 'tunnel setup' or check launchctl"),
-		)
-	} else if listening {
-		fmt.Printf("  %s  %s\n", liveStyle.Render("●"), liveStyle.Render("live"))
-	} else {
-		fmt.Printf("  %s  %s\n", deadStyle.Render("○"), warnStyle.Render("nothing listening on :"+strconv.Itoa(port)+" yet"))
+	var dot, statusText string
+	switch {
+	case serviceIssue != "":
+		dot = warnStyle.Render("⚠")
+		statusText = warnStyle.Render(serviceIssue)
+	case listening:
+		dot = liveStyle.Render("●")
+		statusText = liveStyle.Render("live")
+	default:
+		dot = deadStyle.Render("○")
+		statusText = warnStyle.Render("nothing listening yet")
 	}
 
+	fmt.Println()
+	fmt.Printf("  %s\n", gradientTunnel()+boldStyle.Render("  "+closeKey))
+	fmt.Printf("  %s\n", hr)
+	fmt.Printf("  %s  %s  %s  %s\n",
+		dot,
+		urlStyle.Render(url),
+		dimStyle.Render("→ :"+strconv.Itoa(port)),
+		statusText,
+	)
+	fmt.Printf("  %s\n", hr)
 	fmt.Println()
 	fmt.Printf("  %s\n", hintStyle.Render("tunnel close "+closeKey+"  to remove"))
 	fmt.Println()
 }
 
 func showClosed(key, domain string) {
+	hr := dimStyle.Render(strings.Repeat("─", 55))
+	url := "https://" + key + "." + domain
+
 	fmt.Println()
-	fmt.Printf("  %s  %s\n", doneStyle.Render("✓"), dimStyle.Render("closed: "+key+"."+domain))
+	fmt.Printf("  %s\n", gradientTunnel()+boldStyle.Render("  close"))
+	fmt.Printf("  %s\n", hr)
+	fmt.Printf("  %s  %s\n", deadStyle.Render("○"), dimStyle.Render(url+"  removed"))
+	fmt.Printf("  %s\n", hr)
 	fmt.Println()
 }
 
@@ -59,68 +85,151 @@ func showServicesStopped() {
 	fmt.Println()
 }
 
-func showList(domain string, nameKeys, portKeys []string, all map[string]int, unregistered []int) {
-	hasAny := len(nameKeys) > 0 || len(portKeys) > 0 || len(unregistered) > 0
+func showList(domain string, nameKeys, portKeys []string, all map[string]int, unregistered []int, showAll bool) {
+	hr := dimStyle.Render(strings.Repeat("─", 55))
+
+	suffix := "  list"
+	if showAll {
+		suffix = "  list -a"
+	}
 
 	fmt.Println()
+	fmt.Printf("  %s\n", gradientTunnel()+boldStyle.Render(suffix))
 
-	if !hasAny {
-		fmt.Printf("  %s\n", dimStyle.Render("No active services found."))
+	if showAll {
+		if len(nameKeys) == 0 && len(portKeys) == 0 && len(unregistered) == 0 {
+			fmt.Printf("  %s\n", hr)
+			fmt.Printf("  %s\n", dimStyle.Render("nothing registered"))
+			fmt.Printf("  %s\n", hr)
+			fmt.Println()
+			return
+		}
+
+		if len(nameKeys) > 0 {
+			fmt.Println()
+			fmt.Printf("  %s\n", sectionStyle.Render("Named routes"))
+			fmt.Printf("  %s\n", hr)
+			sorted := make([]string, len(nameKeys))
+			copy(sorted, nameKeys)
+			sort.Strings(sorted)
+			for _, k := range sorted {
+				fmt.Printf("  %s  %-14s  %s\n",
+					statusDot(isListening(all[k])),
+					k,
+					urlStyle.Render("https://"+k+"."+domain),
+				)
+			}
+		}
+
+		if len(portKeys) > 0 {
+			fmt.Println()
+			fmt.Printf("  %s\n", sectionStyle.Render("Registered ports"))
+			fmt.Printf("  %s\n", hr)
+			sorted := make([]string, len(portKeys))
+			copy(sorted, portKeys)
+			sort.Slice(sorted, func(i, j int) bool {
+				a, _ := strconv.Atoi(sorted[i])
+				b, _ := strconv.Atoi(sorted[j])
+				return a < b
+			})
+			for _, k := range sorted {
+				p := all[k]
+				fmt.Printf("  %s  %-14s  %s\n",
+					statusDot(isListening(p)),
+					k,
+					urlStyle.Render("https://"+strconv.Itoa(p)+"."+domain),
+				)
+			}
+		}
+
+		if len(unregistered) > 0 {
+			fmt.Println()
+			fmt.Printf("  %s\n", sectionStyle.Render("Other listening"))
+			fmt.Printf("  %s\n", hr)
+			sortedU := make([]int, len(unregistered))
+			copy(sortedU, unregistered)
+			sort.Ints(sortedU)
+			for _, p := range sortedU {
+				fmt.Printf("  %s  %-14s  %s\n",
+					liveStyle.Render("●"),
+					strconv.Itoa(p),
+					urlStyle.Render("https://"+strconv.Itoa(p)+"."+domain),
+				)
+			}
+			fmt.Println()
+			fmt.Printf("  %s\n", hintStyle.Render("run 'tunnel <port>' to register an untracked port"))
+		}
+
 		fmt.Println()
 		return
 	}
 
-	if len(nameKeys) > 0 {
-		fmt.Printf("  %s\n", sectionStyle.Render("Named routes"))
-		fmt.Println()
-		sorted := make([]string, len(nameKeys))
-		copy(sorted, nameKeys)
-		sort.Strings(sorted)
-		for _, k := range sorted {
-			dot := statusDot(isListening(all[k]))
-			fmt.Printf("  %s  %-30s  %s\n",
-				dot,
-				urlStyle.Render("https://"+k+"."+domain),
-				dimStyle.Render(":"+strconv.Itoa(all[k])),
-			)
+	// Default: active-only flat view
+	fmt.Printf("  %s\n", hr)
+
+	count := 0
+
+	sortedNames := make([]string, 0)
+	for _, k := range nameKeys {
+		if isListening(all[k]) {
+			sortedNames = append(sortedNames, k)
 		}
-		fmt.Println()
+	}
+	sort.Strings(sortedNames)
+	for _, k := range sortedNames {
+		fmt.Printf("  %s  %-14s  %s\n",
+			liveStyle.Render("●"),
+			k,
+			urlStyle.Render("https://"+k+"."+domain),
+		)
+		count++
 	}
 
-	if len(portKeys) > 0 {
-		fmt.Printf("  %s\n", sectionStyle.Render("Registered ports"))
-		fmt.Println()
-		sorted := make([]string, len(portKeys))
-		copy(sorted, portKeys)
-		sort.Slice(sorted, func(i, j int) bool {
-			a, _ := strconv.Atoi(sorted[i])
-			b, _ := strconv.Atoi(sorted[j])
-			return a < b
-		})
-		for _, k := range sorted {
-			p := all[k]
-			dot := statusDot(isListening(p))
-			fmt.Printf("  %s  %s\n",
-				dot,
-				urlStyle.Render("https://"+strconv.Itoa(p)+"."+domain),
-			)
+	sortedPorts := make([]string, 0)
+	for _, k := range portKeys {
+		if isListening(all[k]) {
+			sortedPorts = append(sortedPorts, k)
 		}
-		fmt.Println()
+	}
+	sort.Slice(sortedPorts, func(i, j int) bool {
+		a, _ := strconv.Atoi(sortedPorts[i])
+		b, _ := strconv.Atoi(sortedPorts[j])
+		return a < b
+	})
+	for _, k := range sortedPorts {
+		p := all[k]
+		fmt.Printf("  %s  %-14s  %s\n",
+			liveStyle.Render("●"),
+			k,
+			urlStyle.Render("https://"+strconv.Itoa(p)+"."+domain),
+		)
+		count++
 	}
 
-	if len(unregistered) > 0 {
-		fmt.Printf("  %s\n", sectionStyle.Render("Other listening ports"))
-		fmt.Println()
-		sortedPorts := make([]int, len(unregistered))
-		copy(sortedPorts, unregistered)
-		sort.Ints(sortedPorts)
-		for _, p := range sortedPorts {
-			fmt.Printf("  %s  %-30s  %s\n",
-				liveStyle.Render("●"),
-				urlStyle.Render("https://"+strconv.Itoa(p)+"."+domain),
-				hintStyle.Render("run 'tunnel "+strconv.Itoa(p)+"' to register"),
-			)
+	if count == 0 {
+		fmt.Printf("  %s\n", dimStyle.Render("nothing active"))
+	}
+
+	fmt.Printf("  %s\n", hr)
+	fmt.Println()
+
+	hasInactive := false
+	for _, k := range nameKeys {
+		if !isListening(all[k]) {
+			hasInactive = true
+			break
 		}
+	}
+	if !hasInactive {
+		for _, k := range portKeys {
+			if !isListening(all[k]) {
+				hasInactive = true
+				break
+			}
+		}
+	}
+	if hasInactive {
+		fmt.Printf("  %s\n", hintStyle.Render("tunnel list -a  to show all registered"))
 		fmt.Println()
 	}
 }
@@ -135,7 +244,7 @@ type blockConfirmModel struct {
 
 var (
 	promptTitleStyle  = lipgloss.NewStyle().Bold(true)
-	choiceActiveStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#4C8FFF")).Bold(true)
+	choiceActiveStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#4C618F")).Bold(true)
 	choiceStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#555566"))
 )
 
@@ -165,9 +274,9 @@ func (m blockConfirmModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m blockConfirmModel) View() string {
-	s := fmt.Sprintf("\n  %s\n\n",
-		promptTitleStyle.Render(fmt.Sprintf(":%d is currently listening.", m.port)),
-	)
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n  %s\n\n", gradientTunnel()+boldStyle.Render("  block"))
+	fmt.Fprintf(&b, "  %s\n\n", promptTitleStyle.Render(fmt.Sprintf(":%d is currently listening.", m.port)))
 	choices := []string{"Stop process and block", "Cancel"}
 	for i, c := range choices {
 		cursor := "  "
@@ -178,10 +287,10 @@ func (m blockConfirmModel) View() string {
 		} else {
 			label = choiceStyle.Render(c)
 		}
-		s += fmt.Sprintf("  %s%s\n", cursor, label)
+		fmt.Fprintf(&b, "  %s%s\n", cursor, label)
 	}
-	s += fmt.Sprintf("\n  %s\n", hintStyle.Render("↑↓ move  enter confirm"))
-	return s
+	fmt.Fprintf(&b, "\n  %s\n", hintStyle.Render("↑↓ move  enter confirm"))
+	return b.String()
 }
 
 // confirmBlock shows an interactive prompt and returns true if the user chose

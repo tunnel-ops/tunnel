@@ -2,6 +2,7 @@ PROXY_BIN  := bin/requests-proxy
 TUNNEL_BIN := bin/tunnel
 PLIST_NAME := com.bellamy.requests-proxy
 PLIST_PATH := $(HOME)/Library/LaunchAgents/$(PLIST_NAME).plist
+PREFIX     := /usr/local/bin
 
 VERSION    := $(shell git describe --tags --always 2>/dev/null || echo "dev")
 BUILD_TIME := $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
@@ -10,7 +11,7 @@ PROXY_LDFLAGS := -ldflags="-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_
 -include .env
 export
 
-.PHONY: build run install uninstall tunnel-install tunnel-uninstall setup clean
+.PHONY: build run install restart uninstall tunnel-install tunnel-uninstall setup clean
 
 build:
 	@mkdir -p bin
@@ -31,7 +32,7 @@ install: build
 	fi
 	@mkdir -p $(HOME)/Library/LaunchAgents
 	@PROXY_PORT_VAL=$${PROXY_PORT:-7999}; \
-	BINARY_ABS="$(CURDIR)/$(PROXY_BIN)"; \
+	BINARY_ABS="$(PREFIX)/requests-proxy"; \
 	python3 -c " \
 import sys; \
 tpl = '''<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
@@ -58,9 +59,17 @@ print(tpl.format(binary=sys.argv[1], domain=sys.argv[2], port=sys.argv[3])) \
 " "$$BINARY_ABS" "$(DOMAIN)" "$$PROXY_PORT_VAL" > $(PLIST_PATH)
 	launchctl load -w $(PLIST_PATH)
 	@echo "Proxy installed and started. Logs: $(HOME)/Library/Logs/requests-proxy.log"
-	@echo "Installing tunnel to /usr/local/bin/tunnel..."
-	@cp $(TUNNEL_BIN) /usr/local/bin/tunnel
-	@echo "tunnel installed."
+	@echo "Installing binaries to $(PREFIX)..."
+	@sudo cp $(PROXY_BIN) $(PREFIX)/requests-proxy
+	@sudo cp $(TUNNEL_BIN) $(PREFIX)/tunnel
+	@echo "requests-proxy and tunnel installed."
+
+restart: build
+	sudo cp $(PROXY_BIN) $(PREFIX)/requests-proxy
+	sudo cp $(TUNNEL_BIN) $(PREFIX)/tunnel
+	sudo launchctl bootout gui/$$(id -u $${SUDO_USER:-$$USER}) $(PLIST_PATH) 2>/dev/null || true
+	sudo launchctl bootstrap gui/$$(id -u $${SUDO_USER:-$$USER}) $(PLIST_PATH)
+	@echo "requests-proxy and tunnel deployed."
 
 uninstall:
 	@if [ -f $(PLIST_PATH) ]; then \
@@ -69,7 +78,8 @@ uninstall:
 	else \
 		echo "Service not installed."; \
 	fi
-	@rm -f /usr/local/bin/tunnel && echo "tunnel removed." || true
+	@rm -f $(PREFIX)/requests-proxy && echo "requests-proxy removed." || true
+	@rm -f $(PREFIX)/tunnel && echo "tunnel removed." || true
 
 tunnel-install:
 	@if [ ! -f "$(HOME)/.cloudflared/config.yml" ]; then \

@@ -2,16 +2,52 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 )
 
+func cmdHelp() {
+	hr := dimStyle.Render(strings.Repeat("─", 55))
+
+	cmd := func(c, desc string) {
+		fmt.Printf("  %s  %s\n", boldStyle.Render(fmt.Sprintf("%-34s", c)), dimStyle.Render(desc))
+	}
+
+	fmt.Println()
+	fmt.Printf("  %s\n", gradientTunnel()+boldStyle.Render("  help"))
+	fmt.Printf("  %s\n", hr)
+
+	cmd("tunnel <port>", "print the public URL")
+	cmd("tunnel <port> --open", "open in browser")
+	cmd("tunnel --name <name> <port>", "register a named subdomain")
+	cmd("tunnel close <port|name>", "remove a registered tunnel")
+	cmd("tunnel list", "show active tunnels")
+	cmd("tunnel list -a", "show all registered tunnels")
+	cmd("tunnel watch", "live request monitor · all ports")
+	cmd("tunnel watch <port>", "live request monitor · one port")
+	cmd("tunnel block <port>", "block a port from being exposed")
+	cmd("tunnel unblock <port>", "remove a port block")
+	cmd("tunnel setup", "first-time configuration wizard")
+	cmd("tunnel welcome", "show welcome screen")
+
+	fmt.Printf("  %s\n", hr)
+	fmt.Println()
+
+	fmt.Printf("  %s\n", sectionStyle.Render("Examples"))
+	fmt.Printf("  %s\n", dimStyle.Render("tunnel 5173"))
+	fmt.Printf("  %s\n", dimStyle.Render("tunnel --name api 8080 --open"))
+	fmt.Printf("  %s\n", dimStyle.Render("tunnel close api"))
+	fmt.Printf("  %s\n", dimStyle.Render("tunnel watch 3000"))
+	fmt.Println()
+}
+
 func cmdWelcome() {
 	var (
-		c1 = lipgloss.NewStyle().Foreground(lipgloss.Color("#4C8FFF"))
-		c2 = lipgloss.NewStyle().Foreground(lipgloss.Color("#6B72FF"))
-		c3 = lipgloss.NewStyle().Foreground(lipgloss.Color("#7E65FF"))
-		c4 = lipgloss.NewStyle().Foreground(lipgloss.Color("#9148FF"))
+		c1 = lipgloss.NewStyle().Foreground(lipgloss.Color("#4C618F"))
+		c2 = lipgloss.NewStyle().Foreground(lipgloss.Color("#5B5F9E"))
+		c3 = lipgloss.NewStyle().Foreground(lipgloss.Color("#6A5CAC"))
+		c4 = lipgloss.NewStyle().Foreground(lipgloss.Color("#7958B8"))
 
 		subtleSt = lipgloss.NewStyle().Foreground(lipgloss.Color("#666677"))
 		boldSt  = lipgloss.NewStyle().Bold(true)
@@ -28,12 +64,7 @@ func cmdWelcome() {
 	fmt.Println()
 	fmt.Println("  " + c1.Render("::"))
 	// "tunnel" rendered letter-by-letter across the blue→purple gradient
-	name := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#4C8FFF")).Render("t") +
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#6270FF")).Render("u") +
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7360FF")).Render("n") +
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#8050FF")).Render("n") +
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#8E40FF")).Render("e") +
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#9B30FF")).Render("l")
+	name := gradientTunnel()
 
 	fmt.Println("  " + "  " + c2.Render("::::") + "                          " + name)
 	fmt.Println("  " + "    " + c3.Render("::::::"))
