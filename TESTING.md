@@ -35,6 +35,8 @@ go test -v ./internal/names/...
 | `internal/dns` | Namecheap XML parsing (OK + ERROR), `splitDomain`, GoDaddy PUT request construction + auth header, public IP detection |
 | `internal/proxy` | `ExtractPort` — valid ports, wrong domain, nested subdomain, out-of-range ports, non-numeric subdomain; default blocked ports |
 | `internal/names` | Add/Lookup/Remove/List on a temp-file-backed store |
+| `internal/appconfig` | `AutoUpdate` and `LastUpdateCheck` round-trip through JSON |
+| `cmd/tunnel` | `parseTargets` — `--open` flag stripping from mixed arg lists; `isNewerVersion` — semver comparison including multi-digit components |
 
 **Expected output:**
 ```
@@ -108,15 +110,48 @@ DOMAIN=example.com ./bin/tunnel 9999
 # Expected: https://9999.example.com  (no warning — port is listening)
 
 DOMAIN=example.com ./bin/tunnel list
-# Expected: "Registered ports:" with 9999 listed, ● active marker
+# Expected: 9999 listed with ● active marker
 
 DOMAIN=example.com ./bin/tunnel close 9999
-# Expected: closed: 9999.example.com
+# Expected: ○ https://9999.example.com  removed
 
 DOMAIN=example.com ./bin/tunnel list
-# Expected: No active services found (9999 removed from store)
+# Expected: nothing active (9999 removed from store)
 
 kill $SERVER_PID
+```
+
+---
+
+## 4a. tunnel CLI — Multi-Port Open & Close
+
+```bash
+python3 -m http.server 9001 &
+python3 -m http.server 9002 &
+
+DOMAIN=example.com ./bin/tunnel 9001 9002
+# Expected: single branded header listing both URLs
+
+DOMAIN=example.com ./bin/tunnel list
+# Expected: both 9001 and 9002 listed with ● markers
+
+DOMAIN=example.com ./bin/tunnel close 9001 9002
+# Expected: single header with both entries removed
+
+DOMAIN=example.com ./bin/tunnel list
+# Expected: nothing active
+
+kill %1 %2
+```
+
+Close with unknown key aborts before removing any:
+
+```bash
+DOMAIN=example.com ./bin/tunnel 9001
+DOMAIN=example.com ./bin/tunnel close 9001 unknown-key
+# Expected: error about "unknown-key", 9001 still in store
+
+DOMAIN=example.com ./bin/tunnel close 9001
 ```
 
 ---
@@ -144,6 +179,91 @@ DOMAIN=example.com ./bin/tunnel --name ui 3000
 DOMAIN=example.com ./bin/tunnel rm ui
 
 kill $SERVER_PID
+```
+
+---
+
+## 5a. tunnel CLI — Block & Unblock
+
+```bash
+python3 -m http.server 9999 &
+SERVER_PID=$!
+
+# Block an active port — interactive prompt appears
+DOMAIN=example.com ./bin/tunnel block 9999
+# Select "Stop process and block"
+# Expected: ✓ :9999 blocked
+
+# Trying to register a blocked port shows a styled error
+DOMAIN=example.com ./bin/tunnel 9999
+# Expected: ⊘ port 9999 is blocked  (no registration)
+
+# Named tunnel to a blocked port also errors
+DOMAIN=example.com ./bin/tunnel --name svc 9999
+# Expected: ⊘ port 9999 is blocked
+
+# Multi-port with one blocked aborts early
+DOMAIN=example.com ./bin/tunnel 8080 9999
+# Expected: ⊘ port 9999 is blocked, nothing registered
+
+# list -a shows Blocked section
+DOMAIN=example.com ./bin/tunnel list -a
+# Expected: "Blocked" section with ⊘ 9999 entry
+
+# Unblock and register succeeds
+DOMAIN=example.com ./bin/tunnel unblock 9999
+# Expected: ✓ :9999 unblocked
+
+DOMAIN=example.com ./bin/tunnel 9999
+# Expected: https://9999.example.com
+
+DOMAIN=example.com ./bin/tunnel close 9999
+kill $SERVER_PID
+```
+
+---
+
+## 5b. tunnel CLI — Watch (live request monitor)
+
+```bash
+python3 -m http.server 9000 &
+DOMAIN=example.com ./bin/tunnel 9000
+
+# In another terminal
+DOMAIN=example.com ./bin/tunnel watch
+# Expected: TUI showing live requests; press q or ctrl+c to exit
+
+# Filter to one port
+DOMAIN=example.com ./bin/tunnel watch 9000
+# Expected: same TUI filtered to :9000 only
+
+# Send a test request
+curl -s -H "Host: 9000.example.com" http://localhost:7999/ > /dev/null
+# Expected: request appears in watch TUI
+
+kill %1
+DOMAIN=example.com ./bin/tunnel close 9000
+```
+
+---
+
+## 5c. tunnel CLI — Auto-update
+
+```bash
+# Check for updates and apply if available
+./bin/tunnel update
+# Expected: shows current version, "already up to date" if on latest,
+#           or downloads and replaces binary
+
+# Enable/disable automatic updates
+./bin/tunnel update --enable
+# Expected: ✓ auto-updates enabled
+
+./bin/tunnel update --disable
+# Expected: ✓ auto-updates disabled
+
+# When enabled, running any tunnel command checks for updates once per day
+# (throttled — check ~/.config/requests/config.json for lastUpdateCheck field)
 ```
 
 ---
@@ -417,21 +537,32 @@ cat ~/.cloudflared/config.yml
 ## Checklist Summary
 
 ```
-[ ] go test ./...                                passes
-[ ] make build                                   produces both binaries
-[ ] tunnel help                                  displays usage
-[ ] tunnel <port> (invalid)                      correct error messages
-[ ] tunnel 9999 / list / close 9999             register, show, remove
-[ ] tunnel --name api 8080 / close api          named route lifecycle
-[ ] proxy routes valid Host headers             200
-[ ] proxy rejects wrong domain / blocked ports  403
-[ ] proxy returns 502 for dead backends         502
-[ ] setup TUI — all screens render              no panic, ctrl+c restores terminal
-[ ] setup TUI — creds screen masks secrets      · characters shown
-[ ] setup TUI — skip creds if already stored    no prompt on re-run
-[ ] setup TUI — domain persisted               no DOMAIN env needed after setup
-[ ] setup TUI — idempotent re-run              skipped steps shown with –
-[ ] config.json has 0600 permissions            stat confirms
-[ ] config.json contains no secrets            grep for key/secret is empty
-[ ] full public URL resolves                    curl https://<port>.domain returns 200
+[ ] go test ./...                                   passes
+[ ] make build                                      produces both binaries
+[ ] tunnel help                                     displays usage with all commands
+[ ] tunnel <port> (invalid)                         correct error messages
+[ ] tunnel 9999 / list / close 9999                register, show, remove
+[ ] tunnel 9001 9002 / close 9001 9002             multi-port open and close
+[ ] tunnel close 9001 unknown — aborts before any removal
+[ ] tunnel --name api 8080 / close api             named route lifecycle
+[ ] tunnel block 9999                              interactive prompt, process killed, blocked
+[ ] tunnel 9999 after block                        ⊘ styled error, not registered
+[ ] tunnel --name svc 9999 after block             ⊘ styled error
+[ ] tunnel list -a after block                     Blocked section visible
+[ ] tunnel unblock 9999 / tunnel 9999              succeeds after unblock
+[ ] tunnel watch                                   TUI renders, q exits cleanly
+[ ] tunnel watch <port>                            TUI filters to port
+[ ] tunnel update                                  shows version, applies if newer
+[ ] tunnel update --enable / --disable             toggles autoUpdate in config.json
+[ ] proxy routes valid Host headers                200
+[ ] proxy rejects wrong domain / blocked ports     403
+[ ] proxy returns 502 for dead backends            502
+[ ] setup TUI — all screens render                 no panic, ctrl+c restores terminal
+[ ] setup TUI — creds screen masks secrets         · characters shown
+[ ] setup TUI — skip creds if already stored       no prompt on re-run
+[ ] setup TUI — domain persisted                   no DOMAIN env needed after setup
+[ ] setup TUI — idempotent re-run                  skipped steps shown with –
+[ ] config.json has 0600 permissions               stat confirms
+[ ] config.json contains no secrets               grep for key/secret is empty
+[ ] full public URL resolves                       curl https://<port>.domain returns 200
 ```

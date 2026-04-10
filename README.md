@@ -66,16 +66,26 @@ tunnel 5173
 ## Usage
 
 ```
-tunnel welcome                      Show welcome screen and quick-start info
-tunnel setup                        First-time configuration wizard
-tunnel <port>                       Print the public URL for a numeric port
-tunnel <port> --open                Print and open in browser
-tunnel --name <name> <port>         Register a named subdomain and print URL
-tunnel --name <name> <port> --open  Register, print, and open in browser
-tunnel close <port|name>            Remove a registered tunnel
-tunnel rm <name>                    Alias for close
-tunnel list                         List registered tunnels and listening ports
-tunnel help                         Show this help
+tunnel welcome                          Show welcome screen and quick-start info
+tunnel setup                            First-time configuration wizard
+tunnel <port>                           Print the public URL for a numeric port
+tunnel <port> --open                    Print and open in browser
+tunnel <p1> <p2> ...                    Register and print multiple ports at once
+tunnel --name <name> <port>             Register a named subdomain and print URL
+tunnel --name <name> <port> --open      Register, print, and open in browser
+tunnel close <port|name>                Remove a registered tunnel
+tunnel close <p1> <p2> ...             Remove multiple tunnels at once
+tunnel rm <name>                        Alias for close
+tunnel list                             List active tunnels
+tunnel list -a                          List all registered tunnels (including inactive and blocked)
+tunnel watch                            Live request monitor — all ports
+tunnel watch <port>                     Live request monitor — one port
+tunnel block <port>                     Block a port from being exposed
+tunnel unblock <port>                   Remove a port block
+tunnel update                           Check for a newer release and apply it
+tunnel update --enable                  Enable automatic updates
+tunnel update --disable                 Disable automatic updates
+tunnel help                             Show this help
 ```
 
 ### Examples
@@ -84,6 +94,10 @@ tunnel help                         Show this help
 # Numeric port
 tunnel 3000
 # https://3000.yourdomain.com
+
+# Multiple ports at once
+tunnel 3000 4000 5173
+tunnel close 3000 4000 5173
 
 # Named subdomain
 tunnel --name api 8080
@@ -95,9 +109,24 @@ tunnel --name app 5173 --open
 # See everything running
 tunnel list
 
+# See all registered (including inactive and blocked)
+tunnel list -a
+
+# Monitor live traffic
+tunnel watch
+tunnel watch 3000
+
+# Block/unblock a port
+tunnel block 5432
+tunnel unblock 5432
+
 # Remove when done
 tunnel close api
 tunnel close 3000
+
+# Updates
+tunnel update
+tunnel update --enable
 ```
 
 ---
@@ -120,6 +149,7 @@ browser → Cloudflare edge → cloudflared tunnel → requests-proxy (:7999) �
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | SSRF                 | Proxy always forwards to `127.0.0.1` — never follows arbitrary targets                                                 |
 | Sensitive ports      | SSH (22), SMTP (25), MySQL (3306), PostgreSQL (5432), Redis (6379), MongoDB (27017+) and others are blocked by default |
+| Port blocking        | `tunnel block <port>` kills the process and prevents future registration; CLI rejects blocked ports before they are saved |
 | Subdomain validation | Only single-level subdomains matching the configured domain are accepted; nested subdomains return 403                 |
 | Body size            | Requests over 10 MB are rejected (configurable via `MAX_BODY_MB`)                                                      |
 | API credentials      | Stored in macOS Keychain via the `security` CLI; never written to disk                                                 |
@@ -143,6 +173,8 @@ You can override any setting with environment variables:
 | `READ_TIMEOUT`  | `30s`           | HTTP read timeout                        |
 | `WRITE_TIMEOUT` | `30s`           | HTTP write timeout                       |
 | `IDLE_TIMEOUT`  | `120s`          | HTTP idle timeout                        |
+
+User-blocked ports are stored in `~/.config/requests/blocked.json`. Auto-update preference is stored in `~/.config/requests/config.json` (`autoUpdate` field) and can be toggled with `tunnel update --enable / --disable`.
 
 
 ---
