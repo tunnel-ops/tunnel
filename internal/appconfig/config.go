@@ -9,11 +9,13 @@ import (
 
 // Config holds persistent app settings. It never contains API secrets.
 type Config struct {
-	Domain     string `json:"domain"`
-	Provider   string `json:"provider"`   // "cloudflare", "godaddy", "namecheap", "manual"
-	TunnelID   string `json:"tunnelId"`
-	TunnelName string `json:"tunnelName"`
-	ProxyPort  int    `json:"proxyPort"`
+	Domain          string `json:"domain"`
+	Provider        string `json:"provider"` // "cloudflare", "godaddy", "namecheap", "manual"
+	TunnelID        string `json:"tunnelId"`
+	TunnelName      string `json:"tunnelName"`
+	ProxyPort       int    `json:"proxyPort"`
+	AutoUpdate      bool   `json:"autoUpdate"`
+	LastUpdateCheck string `json:"lastUpdateCheck,omitempty"`
 }
 
 func defaultPath() (string, error) {
@@ -40,6 +42,27 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	var cfg Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+// MarshalConfig serializes cfg to indented JSON (used in tests and update logic).
+func MarshalConfig(cfg *Config) ([]byte, error) {
+	return json.MarshalIndent(cfg, "", "  ")
+}
+
+// LoadFrom reads a Config from an explicit path (used in tests).
+func LoadFrom(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return &Config{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, err

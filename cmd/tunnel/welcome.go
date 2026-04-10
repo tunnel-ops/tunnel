@@ -28,6 +28,9 @@ func cmdHelp() {
 	cmd("tunnel watch <port>", "live request monitor · one port")
 	cmd("tunnel block <port>", "block a port from being exposed")
 	cmd("tunnel unblock <port>", "remove a port block")
+	cmd("tunnel update", "check for a newer release and apply it")
+	cmd("tunnel update --enable", "enable automatic updates")
+	cmd("tunnel update --disable", "disable automatic updates")
 	cmd("tunnel setup", "first-time configuration wizard")
 	cmd("tunnel welcome", "show welcome screen")
 

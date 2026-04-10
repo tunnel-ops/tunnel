@@ -20,6 +20,9 @@ import (
 )
 
 
+// Version is injected at build time via -ldflags="-X main.Version=<tag>".
+var Version = "dev"
+
 func main() {
 	args := os.Args[1:]
 
@@ -42,6 +45,18 @@ func main() {
 		return
 	}
 
+	if args[0] == "update" {
+		switch {
+		case len(args) >= 2 && args[1] == "--enable":
+			cmdUpdateToggle(true)
+		case len(args) >= 2 && args[1] == "--disable":
+			cmdUpdateToggle(false)
+		default:
+			cmdUpdate()
+		}
+		return
+	}
+
 	if args[0] == "watch" {
 		portFilter := 0
 		if len(args) >= 2 {
@@ -52,6 +67,8 @@ func main() {
 		cmdWatch(portFilter)
 		return
 	}
+
+	maybeAutoUpdate()
 
 	domain := resolveDomain()
 
@@ -92,10 +109,15 @@ func main() {
 
 	case "rm", "close":
 		if len(args) < 2 {
-			fmt.Fprintf(os.Stderr, "error: tunnel %s <port|name>\n", args[0])
+			fmt.Fprintf(os.Stderr, "error: tunnel %s <port|name>...\n", args[0])
 			os.Exit(1)
 		}
-		cmdClose(args[1], domain, store)
+		keys := args[1:]
+		if len(keys) == 1 {
+			cmdClose(keys[0], domain, store)
+		} else {
+			cmdMultiClose(keys, domain, store)
+		}
 
 	case "--name":
 		if len(args) < 3 {
@@ -112,13 +134,21 @@ func main() {
 		cmdNamed(name, port, domain, open, store)
 
 	default:
-		port, err := parsePort(args[0])
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		targets, openFlag := parseTargets(args)
+		if len(targets) == 0 {
+			fmt.Fprintln(os.Stderr, "error: no port or name specified")
 			os.Exit(1)
 		}
-		open := len(args) >= 2 && args[1] == "--open"
-		cmdPort(port, domain, open, store)
+		if len(targets) == 1 {
+			port, err := parsePort(targets[0])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			cmdPort(port, domain, openFlag, store)
+		} else {
+			cmdMultiOpen(targets, domain, openFlag, store)
+		}
 	}
 }
 
@@ -170,7 +200,21 @@ func resolveProxyPort() int {
 	return 7999
 }
 
+// requireNotBlocked exits with a styled error if port is in the blocked list.
+func requireNotBlocked(port int) {
+	blocked, err := names.NewBlocked("")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	if blocked.Contains(port) {
+		showBlockedError(port)
+		os.Exit(1)
+	}
+}
+
 func cmdPort(port int, domain string, open bool, store *names.Store) {
+	requireNotBlocked(port)
 	_ = store.Add(strconv.Itoa(port), port)
 	serviceIssue := ensureServicesUp(resolveProxyPort())
 	url := fmt.Sprintf("https://%d.%s", port, domain)
@@ -181,6 +225,7 @@ func cmdPort(port int, domain string, open bool, store *names.Store) {
 }
 
 func cmdNamed(name string, port int, domain string, open bool, store *names.Store) {
+	requireNotBlocked(port)
 	if err := store.Add(name, port); err != nil {
 		fmt.Fprintf(os.Stderr, "error: could not save mapping: %v\n", err)
 		os.Exit(1)
@@ -263,6 +308,76 @@ func cmdClose(key string, domain string, store *names.Store) {
 	}
 }
 
+// parseTargets separates "--open" from positional args and returns both.
+func parseTargets(args []string) (targets []string, open bool) {
+	for _, a := range args {
+		if a == "--open" {
+			open = true
+		} else {
+			targets = append(targets, a)
+		}
+	}
+	return targets, open
+}
+
+func cmdMultiOpen(targets []string, domain string, open bool, store *names.Store) {
+	entries := make([]tunnelEntry, 0, len(targets))
+
+	for _, t := range targets {
+		if port, err := parsePort(t); err == nil {
+			requireNotBlocked(port)
+			_ = store.Add(strconv.Itoa(port), port)
+			entries = append(entries, tunnelEntry{
+				key:       strconv.Itoa(port),
+				url:       fmt.Sprintf("https://%d.%s", port, domain),
+				port:      port,
+				listening: isListening(port),
+			})
+		} else if p, ok := store.Lookup(t); ok {
+			entries = append(entries, tunnelEntry{
+				key:       t,
+				url:       fmt.Sprintf("https://%s.%s", t, domain),
+				port:      p,
+				listening: isListening(p),
+			})
+		} else {
+			fmt.Fprintf(os.Stderr,
+				"error: %q is not a valid port and has no registered mapping — register it first with 'tunnel --name %s <port>'\n", t, t)
+			os.Exit(1)
+		}
+	}
+
+	serviceIssue := ensureServicesUp(resolveProxyPort())
+	showMultiTunnelURLs(entries, serviceIssue)
+
+	if open && serviceIssue == "" {
+		for _, e := range entries {
+			openBrowser(e.url)
+		}
+	}
+}
+
+func cmdMultiClose(keys []string, domain string, store *names.Store) {
+	// Validate all keys exist before removing any.
+	for _, key := range keys {
+		if _, ok := store.Lookup(key); !ok {
+			fmt.Fprintf(os.Stderr,
+				"error: no registered tunnel for %q — use 'tunnel list' to see active tunnels\n", key)
+			os.Exit(1)
+		}
+	}
+	for _, key := range keys {
+		if err := store.Remove(key); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+	}
+	showMultiClosed(keys, domain)
+	if stopServicesIfIdle(store) {
+		showServicesStopped()
+	}
+}
+
 func cmdList(domain string, store *names.Store, showAll bool) {
 	all := store.List()
 
@@ -288,7 +403,11 @@ func cmdList(domain string, store *names.Store, showAll bool) {
 		unregistered = append(unregistered, p)
 	}
 
-	showList(domain, nameKeys, portKeys, all, unregistered, showAll)
+	var blockedPorts []int
+	if b, err := names.NewBlocked(""); err == nil {
+		blockedPorts = b.List()
+	}
+	showList(domain, nameKeys, portKeys, all, unregistered, blockedPorts, showAll)
 }
 
 func parsePort(s string) (int, error) {

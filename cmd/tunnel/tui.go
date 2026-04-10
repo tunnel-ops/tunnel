@@ -85,7 +85,7 @@ func showServicesStopped() {
 	fmt.Println()
 }
 
-func showList(domain string, nameKeys, portKeys []string, all map[string]int, unregistered []int, showAll bool) {
+func showList(domain string, nameKeys, portKeys []string, all map[string]int, unregistered []int, blockedPorts []int, showAll bool) {
 	hr := dimStyle.Render(strings.Repeat("─", 55))
 
 	suffix := "  list"
@@ -97,7 +97,7 @@ func showList(domain string, nameKeys, portKeys []string, all map[string]int, un
 	fmt.Printf("  %s\n", gradientTunnel()+boldStyle.Render(suffix))
 
 	if showAll {
-		if len(nameKeys) == 0 && len(portKeys) == 0 && len(unregistered) == 0 {
+		if len(nameKeys) == 0 && len(portKeys) == 0 && len(unregistered) == 0 && len(blockedPorts) == 0 {
 			fmt.Printf("  %s\n", hr)
 			fmt.Printf("  %s\n", dimStyle.Render("nothing registered"))
 			fmt.Printf("  %s\n", hr)
@@ -158,6 +158,20 @@ func showList(domain string, nameKeys, portKeys []string, all map[string]int, un
 			}
 			fmt.Println()
 			fmt.Printf("  %s\n", hintStyle.Render("run 'tunnel <port>' to register an untracked port"))
+		}
+
+		if len(blockedPorts) > 0 {
+			fmt.Println()
+			fmt.Printf("  %s\n", sectionStyle.Render("Blocked"))
+			fmt.Printf("  %s\n", hr)
+			for _, p := range blockedPorts {
+				fmt.Printf("  %s  %-14s\n",
+					warnStyle.Render("⊘"),
+					strconv.Itoa(p),
+				)
+			}
+			fmt.Println()
+			fmt.Printf("  %s\n", hintStyle.Render("run 'tunnel unblock <port>' to remove a block"))
 		}
 
 		fmt.Println()
@@ -232,6 +246,86 @@ func showList(domain string, nameKeys, portKeys []string, all map[string]int, un
 		fmt.Printf("  %s\n", hintStyle.Render("tunnel list -a  to show all registered"))
 		fmt.Println()
 	}
+}
+
+// tunnelEntry holds display data for one item in a multi-tunnel output.
+type tunnelEntry struct {
+	key       string
+	url       string
+	port      int
+	listening bool
+}
+
+// showMultiTunnelURLs renders a batch of tunnels with a single branded header.
+func showMultiTunnelURLs(entries []tunnelEntry, serviceIssue string) {
+	hr := dimStyle.Render(strings.Repeat("─", 55))
+
+	keys := make([]string, len(entries))
+	for i, e := range entries {
+		keys[i] = e.key
+	}
+
+	fmt.Println()
+	fmt.Printf("  %s\n", gradientTunnel()+boldStyle.Render("  "+strings.Join(keys, ", ")))
+	fmt.Printf("  %s\n", hr)
+
+	for _, e := range entries {
+		var dot, statusText string
+		switch {
+		case serviceIssue != "":
+			dot = warnStyle.Render("⚠")
+			statusText = warnStyle.Render(serviceIssue)
+		case e.listening:
+			dot = liveStyle.Render("●")
+			statusText = liveStyle.Render("live")
+		default:
+			dot = deadStyle.Render("○")
+			statusText = warnStyle.Render("nothing listening yet")
+		}
+		fmt.Printf("  %s  %s  %s  %s\n",
+			dot,
+			urlStyle.Render(e.url),
+			dimStyle.Render("→ :"+strconv.Itoa(e.port)),
+			statusText,
+		)
+	}
+
+	fmt.Printf("  %s\n", hr)
+	fmt.Println()
+	fmt.Printf("  %s\n", hintStyle.Render("tunnel close "+strings.Join(keys, " ")+"  to remove"))
+	fmt.Println()
+}
+
+// showMultiClosed renders a batch of removed tunnels under one branded header.
+func showMultiClosed(keys []string, domain string) {
+	hr := dimStyle.Render(strings.Repeat("─", 55))
+
+	fmt.Println()
+	fmt.Printf("  %s\n", gradientTunnel()+boldStyle.Render("  close"))
+	fmt.Printf("  %s\n", hr)
+	for _, key := range keys {
+		url := "https://" + key + "." + domain
+		fmt.Printf("  %s  %s\n", deadStyle.Render("○"), dimStyle.Render(url+"  removed"))
+	}
+	fmt.Printf("  %s\n", hr)
+	fmt.Println()
+}
+
+// showBlockedError renders a branded error panel for a blocked port.
+// The caller is responsible for calling os.Exit after this.
+func showBlockedError(port int) {
+	hr := dimStyle.Render(strings.Repeat("─", 55))
+	fmt.Println()
+	fmt.Printf("  %s\n", gradientTunnel()+boldStyle.Render("  "+strconv.Itoa(port)))
+	fmt.Printf("  %s\n", hr)
+	fmt.Printf("  %s  %s\n",
+		warnStyle.Render("⊘"),
+		warnStyle.Render(fmt.Sprintf("port %d is blocked", port)),
+	)
+	fmt.Printf("  %s\n", hr)
+	fmt.Println()
+	fmt.Printf("  %s\n", hintStyle.Render(fmt.Sprintf("tunnel unblock %d  to allow it", port)))
+	fmt.Println()
 }
 
 // ── Block confirmation prompt ─────────────────────────────────────────────────

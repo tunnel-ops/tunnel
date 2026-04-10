@@ -6,7 +6,8 @@ PREFIX     := /usr/local/bin
 
 VERSION    := $(shell git describe --tags --always 2>/dev/null || echo "dev")
 BUILD_TIME := $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
-PROXY_LDFLAGS := -ldflags="-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
+PROXY_LDFLAGS  := -ldflags="-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
+TUNNEL_LDFLAGS := -ldflags="-X main.Version=$(VERSION)"
 
 -include .env
 export
@@ -16,7 +17,7 @@ export
 build:
 	@mkdir -p bin
 	go build $(PROXY_LDFLAGS) -o $(PROXY_BIN) ./cmd/proxy
-	go build -o $(TUNNEL_BIN) ./cmd/tunnel
+	go build $(TUNNEL_LDFLAGS) -o $(TUNNEL_BIN) ./cmd/tunnel
 
 run: build
 	@if [ -z "$(DOMAIN)" ]; then \
