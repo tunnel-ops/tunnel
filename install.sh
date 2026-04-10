@@ -5,12 +5,13 @@
 #   curl -fsSL https://raw.githubusercontent.com/tunnel-ops/tunnel/main/install.sh | bash
 #
 # Options (env vars):
-#   INSTALL_DIR   Installation directory (default: /usr/local/bin)
+#   INSTALL_DIR   Installation directory (default: /usr/local/bin, falls back to ~/.local/bin)
 #   VERSION       Specific version tag to install (default: latest)
 
 set -euo pipefail
 
 REPO="tunnel-ops/tunnel"
+_INSTALL_DIR_EXPLICIT="${INSTALL_DIR:-}"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 VERSION="${VERSION:-}"
 
@@ -43,14 +44,29 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
-echo "Installing requests ${VERSION} (${OS}/${ARCH}) to ${INSTALL_DIR}"
+# ─── Resolve install directory ────────────────────────────────────────────────
 
-# ─── Check write permissions ──────────────────────────────────────────────────
+_PATH_HINT=""
 
-if [ ! -w "$INSTALL_DIR" ]; then
-  echo "error: ${INSTALL_DIR} is not writable. Re-run with sudo or set INSTALL_DIR to a writable path." >&2
-  exit 1
+if [ -n "$_INSTALL_DIR_EXPLICIT" ]; then
+  # Caller set INSTALL_DIR explicitly — honour it, no fallback.
+  if [ ! -w "$INSTALL_DIR" ]; then
+    echo "error: INSTALL_DIR=${INSTALL_DIR} is not writable." >&2
+    exit 1
+  fi
+else
+  # No explicit override: try /usr/local/bin, fall back to ~/.local/bin.
+  if [ ! -w "$INSTALL_DIR" ]; then
+    INSTALL_DIR="${HOME}/.local/bin"
+    mkdir -p "$INSTALL_DIR"
+    case ":${PATH}:" in
+      *":${INSTALL_DIR}:"*) ;;
+      *) _PATH_HINT="$INSTALL_DIR" ;;
+    esac
+  fi
 fi
+
+echo "Installing requests ${VERSION} (${OS}/${ARCH}) to ${INSTALL_DIR}"
 
 # ─── Download and install ─────────────────────────────────────────────────────
 
@@ -80,8 +96,16 @@ install_binary "requests-proxy"
 
 echo ""
 echo "Done! Run 'tunnel help' to get started."
+
+if [ -n "$_PATH_HINT" ]; then
+  echo ""
+  echo "Note: ${_PATH_HINT} is not in your PATH."
+  echo "Add this to your shell profile (~/.zshrc or ~/.bashrc) and restart your shell:"
+  echo ""
+  echo "    export PATH=\"\$HOME/.local/bin:\$PATH\""
+fi
+
 echo ""
 echo "First-time setup:"
-echo "  export DOMAIN=your-domain.com"
-echo "  requests-proxy &   # start the local reverse proxy"
-echo "  tunnel list        # show active services"
+echo "  tunnel setup       # configure your domain"
+echo "  tunnel help        # all commands"

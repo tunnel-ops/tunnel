@@ -88,7 +88,7 @@ func applyUpdate(version string) error {
 
 	tmp, err := os.CreateTemp(filepath.Dir(exe), ".tunnel-update-*")
 	if err != nil {
-		return fmt.Errorf("cannot write to install directory (try with sudo): %w", err)
+		return fmt.Errorf("cannot write to %s — try with sudo if it is a system directory: %w", filepath.Dir(exe), err)
 	}
 	tmpPath := tmp.Name()
 
@@ -106,7 +106,7 @@ func applyUpdate(version string) error {
 
 	if err := os.Rename(tmpPath, exe); err != nil {
 		os.Remove(tmpPath)
-		return fmt.Errorf("replace failed (try with sudo): %w", err)
+		return fmt.Errorf("replace failed in %s — try with sudo if it is a system directory: %w", filepath.Dir(exe), err)
 	}
 	return nil
 }
