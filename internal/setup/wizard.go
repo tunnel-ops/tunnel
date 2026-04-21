@@ -64,6 +64,7 @@ const (
 	stateConfirm
 	stateRunning
 	stateTunnelConflict
+	stateManualDNS
 	stateDone
 	stateErr
 )
@@ -242,12 +243,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateConfirm(msg)
 		case stateTunnelConflict:
 			return m.updateTunnelConflict(msg)
+		case stateManualDNS:
+			return m.updateManualDNS(msg)
 		case stateRunning:
 			// ignore keypresses while steps are executing
-		case stateDone, stateErr:
+		case stateDone:
 			if isQuit(msg.String()) {
 				return m, tea.Quit
 			}
+		case stateErr:
+			return m.updateErr(msg)
 		}
 
 	case spinner.TickMsg:
@@ -476,6 +481,34 @@ func (m model) updateTunnelConflict(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateManualDNS handles key events on the manual DNS record screen.
+func (m model) updateManualDNS(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "enter":
+		m.steps[stepDNS].state = stepDone
+		m.state = stateRunning
+		return startStep(m, stepWriteConfig)
+	}
+	return m, nil
+}
+
+// updateErr handles key events on the error screen. Pressing 'r' retries the
+// failed step from where setup left off.
+func (m model) updateErr(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "r":
+		m.err = nil
+		m.steps[m.activeStep].state = stepPending
+		m.state = stateRunning
+		return startStep(m, m.activeStep)
+	case "q", "ctrl+c", "enter":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
 // handleStepDone processes the result of a background (non-exec) step.
 func (m model) handleStepDone(msg stepDoneMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
@@ -586,20 +619,36 @@ func startStep(m model, idx int) (model, tea.Cmd) {
 			m.state = stateErr
 			return m, nil
 		}
-		cmd := exec.Command("brew", "install", "cloudflare/cloudflare/cloudflared")
-		return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-			return execDoneMsg{idx: stepCloudflaredCheck, err: err}
-		})
+		if _, err := exec.LookPath("brew"); err != nil {
+			m.steps[idx].state = stepFailed
+			m.err = fmt.Errorf("cloudflared not found and Homebrew is not installed\n  Install Homebrew: https://brew.sh\n  Or install cloudflared directly: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/")
+			m.state = stateErr
+			return m, nil
+		}
+		return m, func() tea.Msg {
+			cmd := exec.Command("brew", "install", "cloudflare/cloudflare/cloudflared")
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				return stepDoneMsg{idx: stepCloudflaredCheck,
+					err: fmt.Errorf("brew install failed: %w\n%s", err, strings.TrimSpace(string(out)))}
+			}
+			return stepDoneMsg{idx: stepCloudflaredCheck}
+		}
 
 	case stepCloudflareAuth:
 		if IsAuthenticated() {
 			m.steps[idx].state = stepSkipped
 			return startStep(m, idx+1)
 		}
-		cmd := exec.Command("cloudflared", "tunnel", "login")
-		return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-			return execDoneMsg{idx: stepCloudflareAuth, err: err}
-		})
+		return m, func() tea.Msg {
+			cmd := exec.Command("cloudflared", "tunnel", "login")
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				return stepDoneMsg{idx: stepCloudflareAuth,
+					err: fmt.Errorf("cloudflared login failed: %w\n%s", err, strings.TrimSpace(string(out)))}
+			}
+			return stepDoneMsg{idx: stepCloudflareAuth}
+		}
 
 	case stepTunnelCreate:
 		if m.cfg.TunnelID != "" {
@@ -619,16 +668,8 @@ func startStep(m model, idx int) (model, tea.Cmd) {
 
 	case stepDNS:
 		if m.cfg.Provider == "manual" {
-			target := m.cfg.TunnelID + ".cfargotunnel.com"
-			domain := m.cfg.Domain
-			script := fmt.Sprintf(
-				`printf '\n  Create this DNS record:\n\n    *.%s  CNAME  %s\n\n  Press Enter once the record is live...' && read`,
-				domain, target,
-			)
-			cmd := exec.Command("sh", "-c", script)
-			return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-				return execDoneMsg{idx: stepDNS, err: err}
-			})
+			m.state = stateManualDNS
+			return m, nil
 		}
 		provider := m.cfg.Provider
 		tunnelName := m.cfg.TunnelName
@@ -701,6 +742,8 @@ func (m model) View() string {
 		return m.viewRunning()
 	case stateTunnelConflict:
 		return m.viewTunnelConflict()
+	case stateManualDNS:
+		return m.viewManualDNS()
 	case stateDone:
 		return m.viewDone()
 	case stateErr:
@@ -783,6 +826,9 @@ func (m model) viewRunning() string {
 	for i, step := range m.steps {
 		b.WriteString("  " + stepIcon(m, i, step) + "  " + step.label + "\n")
 	}
+	if m.activeStep == stepCloudflareAuth && m.steps[stepCloudflareAuth].state == stepRunning {
+		b.WriteString("\n  " + subtleStyle.Render("→ A browser window should open — log in with your Cloudflare account.") + "\n")
+	}
 	return b.String()
 }
 
@@ -819,6 +865,18 @@ func (m model) viewTunnelConflict() string {
 	return b.String()
 }
 
+func (m model) viewManualDNS() string {
+	var b strings.Builder
+	b.WriteString("\n  " + titleStyle.Render("Add a DNS record") + "\n\n")
+	b.WriteString("  Create this record in your DNS provider:\n\n")
+	b.WriteString("    Type:   CNAME\n")
+	b.WriteString(fmt.Sprintf("    Name:   *.%s\n", m.cfg.Domain))
+	b.WriteString(fmt.Sprintf("    Value:  %s.cfargotunnel.com\n", m.cfg.TunnelID))
+	b.WriteString("\n  Once the record is live, press Enter to continue.\n")
+	b.WriteString("\n  " + subtleStyle.Render("enter continue  ctrl+c quit") + "\n")
+	return b.String()
+}
+
 func (m model) viewDone() string {
 	var b strings.Builder
 	b.WriteString("\n  " + doneStyle.Render("✓  Setup complete!") + "\n\n")
@@ -833,7 +891,7 @@ func (m model) viewErr() string {
 	if m.err != nil {
 		b.WriteString("  " + m.err.Error() + "\n\n")
 	}
-	b.WriteString("  " + subtleStyle.Render("press any key to exit") + "\n")
+	b.WriteString("  " + subtleStyle.Render("r retry  q quit") + "\n")
 	return b.String()
 }
 
